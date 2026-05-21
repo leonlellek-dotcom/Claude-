@@ -1,0 +1,431 @@
+// Warenwirtschaftssystem Freibad-Kiosk
+// Phase 1 Schema — wird in Phase 2/3 erweitert.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // SQLite für lokale Entwicklung. Für Produktion: provider = "postgresql"
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================================
+// Auth & Mitarbeiter
+// =====================================================================
+// Hinweis: SQLite unterstützt keine Enums. Wir nutzen Strings + Konstanten
+// in TypeScript (siehe lib/enums.ts). Erlaubte Werte:
+//   UserRole: "ADMIN" | "SHIFT_LEAD" | "EMPLOYEE" | "HELPER"
+//   AssignmentStatus: "SIGNED_UP" | "CONFIRMED" | "CANCELLED" | "COMPLETED"
+//   TaskStatus: "OPEN" | "IN_PROGRESS" | "DONE" | "CANCELLED"
+//   TaskPriority: "LOW" | "NORMAL" | "HIGH" | "URGENT"
+//   RecurrenceType: "NONE" | "DAILY" | "WEEKLY" | "MONTHLY"
+//   StockMovementType: "RECEIPT" | "ISSUE" | "ADJUSTMENT" | "WASTE"
+//   CashTxType: "DEPOSIT" | "WITHDRAWAL" | "CHANGE" | "CORRECTION"
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  role          String    @default("EMPLOYEE") // UserRole
+  hourlyWageCt  Int? // Stundenlohn in Cent
+  active        Boolean   @default(true)
+  phone         String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  availabilities      StaffAvailability[]
+  shiftAssignments    ShiftAssignment[]
+  createdShifts       Shift[]              @relation("ShiftCreator")
+  assignedTasks       Task[]               @relation("TaskAssignee")
+  createdTasks        Task[]               @relation("TaskCreator")
+  checklistRuns       ChecklistRun[]
+  cashCounts          CashCount[]
+  cashTransactions    CashTransaction[]
+  stockMovements      StockMovement[]
+  uploadedInvoices    Invoice[]            @relation("InvoiceUploader")
+  uploadedFiles       File[]
+  auditLogs           AuditLog[]
+  shiftSwapsFrom      ShiftSwapRequest[]   @relation("SwapFrom")
+  shiftSwapsTo        ShiftSwapRequest[]   @relation("SwapTo")
+  handoverNotes       HandoverNote[]
+}
+
+model StaffAvailability {
+  id        String   @id @default(cuid())
+  userId    String
+  weekday   Int // 0 = Sonntag, 6 = Samstag
+  fromTime  String // "HH:mm"
+  toTime    String
+  notes     String?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// =====================================================================
+// Schichten
+// =====================================================================
+
+model Shift {
+  id              String   @id @default(cuid())
+  date            DateTime // nur Datum-Anteil relevant
+  startTime       String   // "HH:mm"
+  endTime         String
+  role            String?  // z.B. "Kasse", "Theke"
+  requiredCount   Int      @default(1)
+  notes           String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy       User              @relation("ShiftCreator", fields: [createdById], references: [id])
+  assignments     ShiftAssignment[]
+  handoverNotes   HandoverNote[]
+
+  @@index([date])
+}
+
+model ShiftAssignment {
+  id          String   @id @default(cuid())
+  shiftId     String
+  userId      String
+  status      String   @default("SIGNED_UP") // AssignmentStatus
+  clockIn     DateTime?
+  clockOut    DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  shift       Shift              @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  swapsFrom   ShiftSwapRequest[] @relation("SwapAssignment")
+
+  @@unique([shiftId, userId])
+  @@index([userId])
+}
+
+model ShiftSwapRequest {
+  id               String   @id @default(cuid())
+  fromAssignmentId String
+  fromUserId       String
+  toUserId         String?
+  status           String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, CANCELLED
+  reason           String?
+  createdAt        DateTime @default(now())
+
+  fromAssignment   ShiftAssignment @relation("SwapAssignment", fields: [fromAssignmentId], references: [id], onDelete: Cascade)
+  fromUser         User            @relation("SwapFrom", fields: [fromUserId], references: [id])
+  toUser           User?           @relation("SwapTo", fields: [toUserId], references: [id])
+}
+
+// =====================================================================
+// Aufgaben
+// =====================================================================
+
+model Task {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  dueAt         DateTime?
+  assigneeId    String?
+  createdById   String
+  status        String   @default("OPEN") // TaskStatus
+  priority      String   @default("NORMAL") // TaskPriority
+  recurrence    String   @default("NONE") // RecurrenceType
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  assignee      User?    @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy     User     @relation("TaskCreator", fields: [createdById], references: [id])
+
+  @@index([assigneeId])
+  @@index([status])
+}
+
+// =====================================================================
+// Checklisten
+// =====================================================================
+
+model ChecklistTemplate {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  frequency     String? // z.B. "Vor Rausgehen", "Öffnung", "Schließung"
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  items         ChecklistItem[]
+  runs          ChecklistRun[]
+}
+
+model ChecklistItem {
+  id            String   @id @default(cuid())
+  templateId    String
+  text          String
+  orderIdx      Int
+  requiresPhoto Boolean  @default(false)
+  requiresNote  Boolean  @default(false)
+
+  template      ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  runItems      ChecklistRunItem[]
+
+  @@index([templateId])
+}
+
+model ChecklistRun {
+  id            String    @id @default(cuid())
+  templateId    String
+  userId        String
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  template      ChecklistTemplate  @relation(fields: [templateId], references: [id])
+  user          User               @relation(fields: [userId], references: [id])
+  items         ChecklistRunItem[]
+
+  @@index([templateId])
+  @@index([userId])
+  @@index([startedAt])
+}
+
+model ChecklistRunItem {
+  id          String   @id @default(cuid())
+  runId       String
+  itemId      String
+  checked     Boolean  @default(false)
+  note        String?
+  photoFileId String?
+  checkedAt   DateTime?
+
+  run         ChecklistRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  item        ChecklistItem @relation(fields: [itemId], references: [id])
+  photoFile   File?         @relation(fields: [photoFileId], references: [id])
+
+  @@unique([runId, itemId])
+}
+
+// =====================================================================
+// Lager / Artikel
+// =====================================================================
+
+model Supplier {
+  id              String   @id @default(cuid())
+  name            String
+  contactName     String?
+  email           String?
+  phone           String?
+  address         String?
+  customerNumber  String?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  products        Product[]
+  invoices        Invoice[]
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  sku           String?  @unique
+  name          String
+  category      String?
+  unit          String   @default("Stück") // Stück, kg, L, Pack
+  vatRate       Float    @default(0.19) // 0.07 oder 0.19
+  purchasePriceCt Int? // Einkaufspreis in Cent
+  sellPriceCt   Int? // Verkaufspreis in Cent
+  minStock      Float    @default(0)
+  trackExpiry   Boolean  @default(false)
+  active        Boolean  @default(true)
+  supplierId    String?
+  imageFileId   String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id])
+  image         File?           @relation(fields: [imageFileId], references: [id])
+  movements     StockMovement[]
+  lots          StockLot[]
+  invoiceLines  InvoiceLine[]
+}
+
+model StockMovement {
+  id          String   @id @default(cuid())
+  productId   String
+  type        String // StockMovementType
+  qty         Float
+  reason      String?
+  userId      String
+  invoiceId   String?
+  createdAt   DateTime @default(now())
+
+  product     Product  @relation(fields: [productId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+}
+
+// MHD-Chargen (Phase 2 vorbereitend, schon im Schema enthalten)
+model StockLot {
+  id            String   @id @default(cuid())
+  productId     String
+  expiryDate    DateTime?
+  qtyRemaining  Float
+  createdAt     DateTime @default(now())
+
+  product       Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([expiryDate])
+}
+
+// =====================================================================
+// Rechnungen
+// =====================================================================
+
+model Invoice {
+  id              String    @id @default(cuid())
+  supplierId      String?
+  invoiceNumber   String?
+  invoiceDate     DateTime?
+  totalNetCt      Int?
+  totalGrossCt    Int?
+  fileId          String?
+  uploadedById    String
+  bookedAt        DateTime  @default(now())
+  notes           String?
+
+  supplier        Supplier?       @relation(fields: [supplierId], references: [id])
+  file            File?           @relation(fields: [fileId], references: [id])
+  uploadedBy      User            @relation("InvoiceUploader", fields: [uploadedById], references: [id])
+  lines           InvoiceLine[]
+  stockMovements  StockMovement[]
+
+  @@index([supplierId])
+  @@index([invoiceDate])
+}
+
+model InvoiceLine {
+  id           String   @id @default(cuid())
+  invoiceId    String
+  productId    String?
+  description  String
+  qty          Float
+  unitPriceCt  Int
+  vatRate      Float    @default(0.19)
+
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product      Product? @relation(fields: [productId], references: [id])
+}
+
+// =====================================================================
+// Kassenbuch
+// =====================================================================
+
+// Eine Kassenzählung (Stückzahlen je Münze/Schein)
+model CashCount {
+  id           String   @id @default(cuid())
+  countedAt    DateTime @default(now())
+  userId       String
+  // Stückzahl je Stückelung
+  c01          Int      @default(0) // 0,01 €
+  c02          Int      @default(0)
+  c05          Int      @default(0)
+  c10          Int      @default(0)
+  c20          Int      @default(0)
+  c50          Int      @default(0)
+  e1           Int      @default(0) // 1 €
+  e2           Int      @default(0)
+  b5           Int      @default(0) // 5 €
+  b10          Int      @default(0)
+  b20          Int      @default(0)
+  b50          Int      @default(0)
+  b100         Int      @default(0)
+  b200         Int      @default(0)
+  b500         Int      @default(0)
+  totalCt      Int // berechnete Summe in Cent
+  expectedCt   Int? // Soll-Bestand (falls bekannt)
+  diffCt       Int? // Ist - Soll
+  isDailyClose Boolean  @default(false)
+  notes        String?
+
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([countedAt])
+}
+
+model CashTransaction {
+  id          String   @id @default(cuid())
+  type        String // CashTxType
+  amountCt    Int // positiv = Eingang, negativ = Ausgang (zusätzlich zum Type für Klarheit)
+  reason      String
+  userId      String
+  occurredAt  DateTime @default(now())
+  notes       String?
+
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([occurredAt])
+}
+
+// =====================================================================
+// Schichtübergabe (Phase 2, schon angelegt)
+// =====================================================================
+
+model HandoverNote {
+  id          String   @id @default(cuid())
+  shiftId     String?
+  authorId    String
+  content     String
+  createdAt   DateTime @default(now())
+
+  shift       Shift?   @relation(fields: [shiftId], references: [id])
+  author      User     @relation(fields: [authorId], references: [id])
+}
+
+// =====================================================================
+// Dateien (zentrale Uploads-Tabelle)
+// =====================================================================
+
+model File {
+  id            String   @id @default(cuid())
+  kind          String // "invoice", "product_image", "checklist_photo", etc.
+  originalName  String
+  storedPath    String
+  mimeType      String
+  sizeBytes     Int
+  sha256        String? // für GoBD-Unveränderbarkeit
+  uploadedById  String
+  uploadedAt    DateTime @default(now())
+
+  uploadedBy    User     @relation(fields: [uploadedById], references: [id])
+  invoices      Invoice[]
+  products      Product[]
+  checklistItems ChecklistRunItem[]
+}
+
+// =====================================================================
+// Audit-Log (GoBD)
+// =====================================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  entity      String
+  entityId    String
+  action      String // CREATE, UPDATE, DELETE
+  before      String? // JSON
+  after       String? // JSON
+  at          DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([at])
+}
