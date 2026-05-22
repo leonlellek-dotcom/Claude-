@@ -74,7 +74,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           </CardHeader>
           <CardContent>
             <a
-              href={invoice.file.storedPath}
+              href={`/api/files/${invoice.file.id}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-primary hover:underline"

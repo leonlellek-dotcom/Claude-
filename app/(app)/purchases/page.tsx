@@ -14,7 +14,7 @@ export default async function PurchasesPage() {
     include: {
       supplier: { select: { name: true } },
       uploadedBy: { select: { name: true } },
-      file: { select: { id: true, storedPath: true, originalName: true } },
+      file: { select: { id: true, originalName: true } },
       _count: { select: { lines: true } },
     },
   });
@@ -65,7 +65,7 @@ export default async function PurchasesPage() {
                   <td className="px-4 py-2 text-muted-foreground">{inv._count.lines}</td>
                   <td className="px-4 py-2">
                     {inv.file ? (
-                      <a href={inv.file.storedPath} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                      <a href={`/api/files/${inv.file.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
                         <FileText className="h-4 w-4" /> Datei
                       </a>
                     ) : (

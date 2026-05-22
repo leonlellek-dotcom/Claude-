@@ -17,8 +17,13 @@ declare module "next-auth" {
   }
 }
 
+// Eingebauter Fallback-Secret, damit das System ohne Setup-Aufwand startet.
+// Wer mehr Sicherheit möchte, setzt AUTH_SECRET als Umgebungsvariable in Vercel.
+const FALLBACK_SECRET = "o18c30IGQYdjO4hegZlJJhwjCipq5UQtBJTMQsUhyzY-freibad-kiosk";
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
+  secret: process.env.AUTH_SECRET ?? FALLBACK_SECRET,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",

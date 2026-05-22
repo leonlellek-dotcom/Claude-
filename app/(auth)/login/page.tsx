@@ -4,12 +4,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { hasAnyAdmin } from "@/lib/setup";
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  if (!(await hasAnyAdmin())) {
+    redirect("/setup");
+  }
   const session = await auth();
   if (session?.user) redirect("/dashboard");
   const { error } = await searchParams;

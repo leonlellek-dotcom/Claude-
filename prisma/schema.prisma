@@ -6,8 +6,7 @@ generator client {
 }
 
 datasource db {
-  // SQLite für lokale Entwicklung. Für Produktion: provider = "postgresql"
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -397,7 +396,8 @@ model File {
   id            String   @id @default(cuid())
   kind          String // "invoice", "product_image", "checklist_photo", etc.
   originalName  String
-  storedPath    String
+  storedPath    String?  // legacy / nur lokal
+  data          Bytes?   // Datei-Inhalt für Cloud-Deploy (Vercel) — direkt in DB
   mimeType      String
   sizeBytes     Int
   sha256        String? // für GoBD-Unveränderbarkeit

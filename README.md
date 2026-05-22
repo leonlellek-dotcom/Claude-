@@ -2,7 +2,13 @@
 
 Komplette Verwaltungssoftware für einen Freibad-Kiosk: Schichten, Aufgaben, Checklisten, Lager, Rechnungen, Kassenbuch.
 
-## Schnellstart
+## 🚀 Vom Handy online stellen
+
+➡ **Komplette Anleitung: [MOBILE-DEPLOY.md](./MOBILE-DEPLOY.md)** (5 Minuten, kostenlos, nur vom Handy aus)
+
+Du klickst dich durch Vercel.com, Datenbank wird automatisch erstellt, beim ersten Aufruf legst du dein Admin-Konto an — fertig.
+
+## Schnellstart (lokal, Entwicklung)
 
 ```bash
 # 1. Abhängigkeiten installieren
